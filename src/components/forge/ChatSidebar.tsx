@@ -9,7 +9,7 @@ type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  attachments?: { kind: "image" | "text"; name: string; preview?: string }[];
+  attachments?: { kind: "image" | "text"; name: string; preview?: string | undefined }[];
   changed?: string[];
   error?: boolean;
 };
