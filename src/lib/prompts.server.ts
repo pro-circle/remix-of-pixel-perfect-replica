@@ -1,3 +1,4 @@
+import { scaffoldSummary } from "./scaffolds";
 import type { Answer, Plan, StackOption } from "./types";
 
 export const PLAN_SYSTEM = `You are a senior software architect. Given a user's app description and chosen tech stack, generate a detailed, structured JSON plan for building their application. Return ONLY valid JSON. No markdown, no explanation.
@@ -18,7 +19,28 @@ The JSON must match exactly:
 Rules:
 - 4 to 7 pages, 6 to 12 API routes, 3 to 7 database tables.
 - filesToGenerate must be 18 to 26 entries covering project setup, frontend pages/components, backend routes/services, schema and docs. Use realistic paths for the chosen stack.
-- Frontend page components live under frontend/src/pages/<Name>.tsx.`;
+- Frontend files live under frontend/, backend files under server/.
+- Follow the "Layout" rules given with the stack for exact paths.
+- Starter files listed as "already provided" exist; do NOT include them in filesToGenerate.`;
+
+const LAYOUT: Record<string, string> = {
+  react: "Frontend: React + Vite. Pages at frontend/src/pages/<Name>Page.tsx, shared components at frontend/src/components/, root at frontend/src/App.tsx (react-router-dom routes). Use shadcn components from @/components/ui/* and Tailwind.",
+  nextjs: "Frontend: Next.js 14 App Router. Root layout frontend/app/layout.tsx (imports ./globals.css), pages at frontend/app/<route>/page.tsx (home at frontend/app/page.tsx), components at frontend/components/. Use shadcn components from @/components/ui/* and Tailwind. Mark interactive components with \"use client\".",
+  html: "Frontend: plain HTML/CSS/JS, no build step. One HTML file per page at frontend/<name>.html (home frontend/index.html), page scripts at frontend/js/<name>.js as ES modules, styles at frontend/css/styles.css. Link css/base.css first. Use js/api.js for backend calls.",
+};
+const BACKEND_GUIDE: Record<string, string> = {
+  express: "Backend: Express.js ESM (type: module). Entry server/src/index.js, routes in server/src/routes/, reuse server/src/db.js and server/src/middleware/error.js. Validate input with zod. Listen on port 8000 with CORS enabled.",
+  fastapi: "Backend: FastAPI. Entry server/app/main.py, routers in server/app/routers/, pydantic schemas in server/app/schemas.py, reuse server/app/db.py (connect/disconnect in lifespan). Async throughout, CORS middleware, port 8000.",
+};
+const DB_GUIDE: Record<string, string> = {
+  postgres: "Database: PostgreSQL with raw parameterised SQL. Put the schema in server/schema.sql.",
+  supabase: "Database: Supabase. Use the service-role client on the server; put table SQL (with RLS) in supabase/schema.sql.",
+  mongodb: "Database: MongoDB. Define document models (mongoose for Express, Beanie for FastAPI); no SQL files.",
+};
+
+export function stackGuide(stack: StackOption): string {
+  return [LAYOUT[stack.frontendId], BACKEND_GUIDE[stack.backendId], DB_GUIDE[stack.databaseId]].join("\n");
+}
 
 export function planUserPrompt(description: string, stack: StackOption) {
   return `App description:
@@ -29,6 +51,12 @@ Chosen stack:
 - Frontend: ${stack.frontend}
 - Backend: ${stack.backend}
 - Database: ${stack.database}
+
+Layout:
+${stackGuide(stack)}
+
+Already provided (do not list):
+${scaffoldSummary(stack)}
 
 Return the plan JSON now.`;
 }
@@ -49,23 +77,13 @@ ${JSON.stringify({ appName: plan.appName, pages: plan.pages, apiRoutes: plan.api
 Return the questions JSON now.`;
 }
 
-const STACK_GUIDANCE: Record<string, string> = {
-  "react-express-supabase":
-    "Use @supabase/supabase-js for DB operations. Use the Supabase client on the frontend (auth, realtime) and on the backend (DB queries via service role key). Use React Query for data fetching. Include proper TypeScript types.",
-  "react-express-postgres":
-    "Use the 'pg' npm package (Pool) for all DB operations. Write raw parameterised SQL. Include a db.js connection pool file and proper error handling.",
-  "react-fastapi-supabase":
-    "Backend is Python FastAPI. Use supabase-py for DB. Use pydantic models for request/response validation. Include CORS middleware. Use async/await throughout.",
-  "react-fastapi-mongodb":
-    "Backend is Python FastAPI. Use Motor (async MongoDB driver) with Beanie ODM models. Include an async context manager for the DB connection and pydantic validation.",
-  "expo-supabase":
-    "Frontend is React Native with Expo SDK 51+. Use @supabase/supabase-js with AsyncStorage for auth persistence. Use NativeWind for styling. All navigation via expo-router.",
-};
-
 export function fileSystemPrompt(stack: StackOption) {
   return `You are a senior ${stack.name} developer. Generate production-quality, complete, working code for the file described. No placeholders. No TODOs. Include all imports. Use modern best practices. Return ONLY the raw file content with no markdown fencing.
 
-Stack guidance: ${STACK_GUIDANCE[stack.id] ?? ""}`;
+${stackGuide(stack)}
+
+These starter files already exist; import and reuse them instead of re-creating them:
+${scaffoldSummary(stack)}`;
 }
 
 export function fileUserPrompt(args: {
@@ -103,7 +121,7 @@ Generate the complete, working file content now:`;
 }
 
 export const FIX_SYSTEM =
-  "You are debugging a React application. You will receive an error message and the file that caused it. Return ONLY the corrected file content with no markdown fencing and no explanation.";
+  "You are debugging a generated web application. You will receive an error message and the file that caused it. Return ONLY the corrected file content with no markdown fencing and no explanation.";
 
 export function fixUserPrompt(error: string, filePath: string, fileContent: string) {
   return `Error: ${error}
@@ -114,4 +132,21 @@ Current content:
 ${fileContent}
 
 Return the fixed file content:`;
+}
+
+export const EDIT_SYSTEM =
+  "You are editing one file of a generated project. Apply the requested change precisely, keep everything else intact, and return ONLY the full updated file content with no markdown fencing and no explanation.";
+
+export function editUserPrompt(instruction: string, filePath: string, fileContent: string, stack: StackOption) {
+  return `Stack: ${stack.name}
+${stackGuide(stack)}
+
+File path: ${filePath}
+
+Requested change: ${instruction}
+
+Current content:
+${fileContent}
+
+Return the full updated file content:`;
 }
