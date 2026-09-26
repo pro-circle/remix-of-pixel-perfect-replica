@@ -143,11 +143,10 @@ File description: ${args.fileDescription}
 Other files in this project:
 ${args.adjacentFiles.join("\n")}
 
-Generate the complete, working file content now:`;
+Before writing, mentally trace how this file connects to the others: imports, exported names, API paths, table columns. Then generate the complete, working file content now:`;
 }
 
-export const FIX_SYSTEM =
-  "You are debugging a generated web application. You will receive an error message and the file that caused it. Return ONLY the corrected file content with no markdown fencing and no explanation.";
+export const FIX_SYSTEM = `You are an elite debugging engineer (Claude/Lovable/Codex level) fixing a generated web application. You will receive an error message and the file that caused it. Diagnose the root cause — not just the symptom — and fix it properly: check imports, types, null-safety, async handling and cross-file contracts. Do not delete functionality to make the error go away. Return ONLY the corrected complete file content with no markdown fencing and no explanation.`;
 
 export function fixUserPrompt(error: string, filePath: string, fileContent: string) {
   return `Error: ${error}
@@ -160,8 +159,7 @@ ${fileContent}
 Return the fixed file content:`;
 }
 
-export const EDIT_SYSTEM =
-  "You are editing one file of a generated project. Apply the requested change precisely, keep everything else intact, and return ONLY the full updated file content with no markdown fencing and no explanation.";
+export const EDIT_SYSTEM = `You are an elite engineer (Claude/Lovable/Codex level) editing one file of a generated project. Apply the requested change precisely and completely: update every affected import, type, call site and contract inside this file; keep all unrelated code byte-for-byte intact; keep the file compiling and consistent with the rest of the project. No placeholders, no partial edits. Return ONLY the full updated file content with no markdown fencing and no explanation.`;
 
 export function editUserPrompt(instruction: string, filePath: string, fileContent: string, stack: StackOption) {
   return `Stack: ${stack.name}
