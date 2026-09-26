@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AUTH_KEY } from "@/components/forge/AppShell";
 import { Button, Card, ErrorNote, Input } from "@/components/forge/ui";
 import { login } from "@/lib/auth.functions";
+import { SESSION_TOKEN_KEY } from "@/lib/session-token";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -39,6 +40,7 @@ function LoginPage() {
         return;
       }
       localStorage.setItem(AUTH_KEY, "true");
+      localStorage.setItem(SESSION_TOKEN_KEY, result.token);
       toast.success("Welcome to Forge");
       navigate({ to: "/" });
     } catch {

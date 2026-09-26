@@ -3,12 +3,12 @@ import { createServerFn } from "@tanstack/react-start";
 export const login = createServerFn({ method: "POST" })
   .inputValidator((data: { username: string; password: string }) => data)
   .handler(async ({ data }) => {
-    const { checkCredentials, issueSession } = await import("./session.server");
+    const { checkCredentials, issueSession, sessionToken } = await import("./session.server");
     if (!checkCredentials(data.username.trim(), data.password)) {
       return { success: false as const, error: "Incorrect username or password." };
     }
     issueSession();
-    return { success: true as const };
+    return { success: true as const, token: sessionToken() };
   });
 
 export const logout = createServerFn({ method: "POST" }).handler(async () => {
