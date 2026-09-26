@@ -226,7 +226,7 @@ function BuildPage() {
   return (
     <WideShell>
       <Stepper current={5} />
-      <div className="mt-6 grid gap-6 lg:grid-cols-[2fr_3fr]">
+      <div className="mt-6 grid items-stretch gap-6 lg:grid-cols-[minmax(20rem,2fr)_minmax(0,3fr)]">
         <Card className="flex max-h-[78vh] flex-col">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -291,7 +291,7 @@ function BuildPage() {
           ) : null}
         </Card>
 
-        <div className="flex h-[78vh] min-h-0 flex-col gap-3">
+        <div className="flex min-h-[42rem] min-w-0 flex-col gap-3 lg:h-[78vh] lg:min-h-0">
           <div className="flex gap-1">
             {(["preview", "code"] as const).map((t) => (
               <button
@@ -308,7 +308,7 @@ function BuildPage() {
               </button>
             ))}
           </div>
-          <div className="min-h-0 flex-1">
+          <div className="min-h-0 min-w-0 flex-1">
             {tab === "preview" ? (
               <PreviewPanel
                 files={currentFiles}

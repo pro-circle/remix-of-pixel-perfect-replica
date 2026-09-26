@@ -4,6 +4,8 @@
  */
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_TPM_BUDGET = 7_600;
+const MIN_COMPLETION_TOKENS = 700;
 
 let keyIndex = 0;
 
@@ -70,6 +72,52 @@ function reasoningParams(model: string, thinking: Thinking): Record<string, unkn
   return {};
 }
 
+const TASK_OUTPUT_BUDGET: Record<LlmTask, number> = {
+  plan: 3_600,
+  clarify: 1_600,
+  frontend_file: 4_800,
+  backend_file: 4_800,
+  schema_file: 3_600,
+  config_file: 1_800,
+  preview_fix: 4_000,
+  chat: 2_400,
+  edit: 4_800,
+};
+
+/** Conservative estimate used to keep prompt + requested completion under Groq's TPM cap. */
+function estimateInputTokens(system: string, user: string): number {
+  return Math.ceil((system.length + user.length) / 3.5) + 160;
+}
+
+function completionBudget(task: LlmTask, system: string, user: string, requested?: number): number {
+  const desired = requested ?? TASK_OUTPUT_BUDGET[task];
+  const available = GROQ_TPM_BUDGET - estimateInputTokens(system, user);
+  if (available < MIN_COMPLETION_TOKENS) {
+    throw new GroqError(
+      "This request contains too much context for the current Groq limit. Shorten the file or instruction and try again.",
+      413,
+    );
+  }
+  return Math.max(MIN_COMPLETION_TOKENS, Math.min(desired, available));
+}
+
+async function groqError(res: Response): Promise<GroqError> {
+  const fallback = `Groq request failed (${res.status}).`;
+  try {
+    const body = (await res.json()) as { error?: { message?: string } };
+    const providerMessage = body.error?.message ?? "";
+    if (res.status === 413 || /request too large|tokens per minute/i.test(providerMessage)) {
+      return new GroqError(
+        "This generation is too large for the current Groq token limit. Forge reduced future request budgets; retry this file.",
+        413,
+      );
+    }
+    return new GroqError(providerMessage ? `Groq request failed: ${providerMessage}` : fallback, res.status);
+  } catch {
+    return new GroqError(fallback, res.status);
+  }
+}
+
 export function getModel(task: LlmTask): string {
   switch (task) {
     case "plan":
@@ -117,7 +165,7 @@ export async function chat({
   user,
   json = false,
   temperature = 0.3,
-  maxTokens = 8000,
+  maxTokens,
   thinking,
   hint = "",
 }: ChatOptions): Promise<string> {
@@ -132,9 +180,8 @@ export async function chat({
   let lastError: GroqError | null = null;
   const model = getModel(task);
   const level = thinking ?? pickThinking(task, hint || user.slice(0, 1500));
-  // Thinking consumes completion tokens, so give it headroom.
-  const budget = level === "high" ? 4000 : level === "medium" ? 2000 : 0;
-  maxTokens += budget;
+  // Reasoning is part of the completion budget, never an allowance added on top.
+  const outputTokens = completionBudget(task, system, user, maxTokens);
 
   for (let attempt = 0; attempt < keys.length; attempt++) {
     const key = keys[keyIndex % keys.length]!;
@@ -152,7 +199,7 @@ export async function chat({
           model,
           ...reasoningParams(model, level),
           temperature,
-          max_completion_tokens: maxTokens,
+          max_completion_tokens: outputTokens,
           ...(json ? { response_format: { type: "json_object" } } : {}),
           messages: [
             { role: "system", content: system },
@@ -173,8 +220,7 @@ export async function chat({
       }
 
       if (!res.ok) {
-        const body = await res.text();
-        throw new GroqError(`Groq request failed (${res.status}): ${body.slice(0, 300)}`, 502);
+        throw await groqError(res);
       }
 
       const data = (await res.json()) as {
@@ -184,10 +230,11 @@ export async function chat({
       if (!content.trim()) throw new GroqError("Groq returned an empty response.", 502);
       return content;
     } catch (error) {
-      if (error instanceof GroqError && error.status !== 502) {
+      if (error instanceof GroqError && (error.status === 401 || error.status === 403 || error.status === 429)) {
         lastError = error;
         continue;
       }
+      if (error instanceof GroqError) throw error;
       if (attempt === keys.length - 1) throw error;
       lastError = error instanceof GroqError ? error : new GroqError(String(error), 502);
     }
