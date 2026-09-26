@@ -20,6 +20,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         if (r.authenticated) setReady(true);
         else {
           localStorage.removeItem(AUTH_KEY);
+              localStorage.removeItem("forge_session_token");
           navigate({ to: "/login" });
         }
       })
@@ -48,6 +49,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={async () => {
               await logout();
               localStorage.removeItem(AUTH_KEY);
+              localStorage.removeItem("forge_session_token");
               navigate({ to: "/login" });
             }}
           >
@@ -75,6 +77,7 @@ export function WideShell({ children }: { children: ReactNode }) {
         if (r.authenticated) setReady(true);
         else {
           localStorage.removeItem(AUTH_KEY);
+              localStorage.removeItem("forge_session_token");
           navigate({ to: "/login" });
         }
       })
@@ -103,6 +106,7 @@ export function WideShell({ children }: { children: ReactNode }) {
             onClick={async () => {
               await logout();
               localStorage.removeItem(AUTH_KEY);
+              localStorage.removeItem("forge_session_token");
               navigate({ to: "/login" });
             }}
           >

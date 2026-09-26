@@ -1,6 +1,7 @@
 import { createStart, createCsrfMiddleware, createMiddleware } from "@tanstack/react-start";
 
 import { renderErrorPage } from "./lib/error-page";
+import { readSessionToken } from "./lib/session-token";
 
 const errorMiddleware = createMiddleware().server(async ({ next }) => {
   try {
@@ -24,6 +25,14 @@ const csrfMiddleware = createCsrfMiddleware({
   filter: (ctx) => ctx.handlerType === "serverFn",
 });
 
+// Sends the demo session token as a header so auth works even when the
+// browser blocks cookies (e.g. the app running inside an embedded preview).
+const attachSessionToken = createMiddleware({ type: "function" }).client(async ({ next }) => {
+  const token = readSessionToken();
+  return next({ headers: token ? { "x-forge-session": token } : {} });
+});
+
 export const startInstance = createStart(() => ({
   requestMiddleware: [errorMiddleware, csrfMiddleware],
+  functionMiddleware: [attachSessionToken],
 }));

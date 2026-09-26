@@ -14,6 +14,10 @@ export function checkCredentials(username: string, password: string): boolean {
   return username === expectedUser && password === expectedPass;
 }
 
+export function sessionToken(): string {
+  return token();
+}
+
 export function issueSession(): void {
   setResponseHeader(
     "Set-Cookie",
@@ -26,9 +30,11 @@ export function clearSession(): void {
 }
 
 export function isAuthenticated(): boolean {
+  // Header token works inside embedded previews where third-party cookies are blocked.
+  const header = getRequestHeader("x-forge-session") ?? "";
   const cookie = getRequestHeader("cookie") ?? "";
   const match = cookie.match(new RegExp(`${COOKIE}=([a-f0-9]+)`));
-  const value = match?.[1];
+  const value = /^[a-f0-9]+$/.test(header) ? header : match?.[1];
   if (!value) return false;
   const expected = token();
   if (value.length !== expected.length) return false;
