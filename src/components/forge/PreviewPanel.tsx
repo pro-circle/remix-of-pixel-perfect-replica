@@ -357,7 +357,12 @@ export function PreviewPanel({
         </div>
       </div>
 
-      <div className={cn("min-h-0 flex-1 overflow-hidden", !fullscreen && "rounded-xl border border-border")}>
+      <div
+        className={cn(
+          "forge-preview min-h-0 w-full flex-1 overflow-hidden bg-background",
+          fullscreen ? "h-full" : "min-h-[32rem] rounded-xl border border-border",
+        )}
+      >
         <SandpackProvider
           key={contentKey}
           template={kind === "html" ? "static" : "react-ts"}
@@ -367,12 +372,12 @@ export function PreviewPanel({
           options={{ recompileDelay: 600, autorun: true }}
         >
           <ErrorWatcher onError={setError} />
-          <SandpackLayout style={{ height: "100%", border: "none", borderRadius: 0 }}>
+          <SandpackLayout style={{ width: "100%", height: "100%", border: "none", borderRadius: 0 }}>
             <SandpackPreview
               showNavigator={false}
               showOpenInCodeSandbox={false}
               showRefreshButton
-              style={{ height: "100%" }}
+              style={{ width: "100%", height: "100%" }}
             />
           </SandpackLayout>
         </SandpackProvider>
