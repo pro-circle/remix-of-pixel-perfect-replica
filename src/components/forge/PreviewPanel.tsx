@@ -164,7 +164,7 @@ export function PreviewPanel({
   const deps = useMemo(() => extractDeps(files), [files]);
   const contentKey = useMemo(() => {
     let h = 0;
-    const s = Object.entries(sandpackFiles).map(([k, v]) => k + v.length + v.slice(0, 64)).join("|") + JSON.stringify(deps);
+    const s = Object.entries(sandpackFiles).map(([k, v]) => k + "\u0000" + v).join("|") + JSON.stringify(deps);
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
     return `${nonce}-${activePage ?? "app"}-${h}`;
   }, [sandpackFiles, deps, nonce, activePage]);
@@ -210,10 +210,11 @@ export function PreviewPanel({
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border">
         <SandpackProvider
-          key={nonce}
+          key={contentKey}
           template="react-ts"
           theme="dark"
           files={sandpackFiles}
+          customSetup={{ dependencies: deps, entry: "/index.tsx" }}
           options={{ recompileDelay: 600, autorun: true }}
         >
           <ErrorWatcher onError={setError} />
