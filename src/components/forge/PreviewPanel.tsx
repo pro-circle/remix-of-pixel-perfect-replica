@@ -21,6 +21,39 @@ const PLACEHOLDER = `export default function App() {
   );
 }`;
 
+const BASE_DEPS: Record<string, string> = {
+  react: "^18.2.0",
+  "react-dom": "^18.2.0",
+};
+const SKIP_DEPS = new Set(["react", "react-dom", "vite", "typescript", "@vitejs/plugin-react"]);
+
+function relPath(p: string): string {
+  const norm = p.replace(/^\.?\//, "");
+  const idx = norm.indexOf("src/");
+  return idx >= 0 ? `/${norm.slice(idx)}` : `/src/${norm.split("/").pop()}`;
+}
+
+/** Pulls runtime dependencies from a generated frontend package.json, if any. */
+function extractDeps(files: GeneratedFile[]): Record<string, string> {
+  const deps: Record<string, string> = { ...BASE_DEPS };
+  const pkgs = files.filter((f) => /(^|\/)package\.json$/.test(f.file_path));
+  const pkg =
+    pkgs.find((f) => /(client|frontend|web)\//.test(f.file_path)) ??
+    pkgs.find((f) => !/(server|backend|api)\//.test(f.file_path));
+  if (!pkg) return deps;
+  try {
+    const json = JSON.parse(pkg.content) as { dependencies?: Record<string, string> };
+    for (const [name, version] of Object.entries(json.dependencies ?? {})) {
+      if (SKIP_DEPS.has(name) || typeof version !== "string") continue;
+      if (/^(workspace|file|link):/.test(version)) continue;
+      deps[name] = version;
+    }
+  } catch {
+    // ignore malformed package.json
+  }
+  return deps;
+}
+
 /** Maps generated frontend paths into a Sandpack-friendly /src tree. */
 function toSandpackFiles(files: GeneratedFile[], activePath: string | null) {
   const out: Record<string, string> = {};
@@ -28,27 +61,62 @@ function toSandpackFiles(files: GeneratedFile[], activePath: string | null) {
     const p = file.file_path;
     if (!/\.(tsx|ts|jsx|js|css)$/.test(p)) continue;
     if (/(^|\/)(server|backend|api)\//.test(p)) continue;
-    const idx = p.indexOf("src/");
-    const rel = idx >= 0 ? p.slice(idx) : `src/${p.split("/").pop()}`;
-    out[`/${rel}`] = file.content;
+    if (/(vite|tailwind|postcss|eslint)\.config\./.test(p)) continue;
+    out[relPath(p)] = file.content;
   }
 
-  const hasApp = Object.keys(out).some((k) => /\/src\/App\.(tsx|jsx)$/.test(k));
-  if (!hasApp) out["/src/App.tsx"] = PLACEHOLDER;
+  const appKey = Object.keys(out).find((k) => /^\/src\/App\.(tsx|jsx)$/.test(k));
+  if (!appKey) out["/src/App.tsx"] = PLACEHOLDER;
+  const appImport = "./src/App";
 
+  // Global styles
+  const cssCandidates = ["/src/index.css", "/src/styles.css", "/src/globals.css", "/src/App.css", "/src/styles/globals.css"];
+  const cssImports = cssCandidates.filter((c) => out[c]).map((c) => `import ".${c}";`);
+
+  let rootImport = appImport;
   if (activePath) {
-    const idx = activePath.indexOf("src/");
-    const rel = idx >= 0 ? `/${activePath.slice(idx)}` : null;
-    const source = rel ? out[rel] : null;
-    if (rel && source) {
-      out["/src/App.tsx"] = `import Page from "${rel.replace("/src", ".").replace(/\.(tsx|jsx)$/, "")}";\n\nexport default function App() {\n  return <Page />;\n}\n`;
-    }
+    const rel = relPath(activePath);
+    if (out[rel]) rootImport = `.${rel.replace(/\.(tsx|jsx|ts|js)$/, "")}`;
   }
 
-  out["/src/index.tsx"] =
-    `import { StrictMode } from "react";\nimport { createRoot } from "react-dom/client";\nimport App from "./App";\n\ncreateRoot(document.getElementById("root")!).render(\n  <StrictMode>\n    <App />\n  </StrictMode>,\n);\n`;
-  out["/index.html"] = `<!doctype html><html><body><div id="root"></div></body></html>`;
+  // Template entry is /index.tsx; override it (and the default Hello-world /App.tsx).
+  out["/index.tsx"] =
+    `import { StrictMode } from "react";\nimport { createRoot } from "react-dom/client";\n${cssImports.join("\n")}\nimport * as Mod from "${rootImport}";\n\nconst Root: any = (Mod as any).default ?? Object.values(Mod).find((v) => typeof v === "function") ?? (() => null);\n\ncreateRoot(document.getElementById("root")!).render(\n  <StrictMode>\n    <Root />\n  </StrictMode>,\n);\n`;
+  out["/App.tsx"] = `export { default } from "${appImport}";\n`;
+  out["/styles.css"] = "";
+  out["/public/index.html"] =
+    `<!doctype html><html><head><meta charset="utf-8" /><script src="https://cdn.tailwindcss.com"></script></head><body><div id="root"></div></body></html>`;
   return out;
+}
+
+function normalizeName(s: string): string {
+  return s.toLowerCase().replace(/page$/, "").replace(/[^a-z0-9]/g, "");
+}
+
+/** Find the generated file for a planned page by name, route, or filename style. */
+function matchPageFile(page: PlanPage, candidates: GeneratedFile[]): GeneratedFile | undefined {
+  const keys = new Set<string>();
+  keys.add(normalizeName(page.name));
+  const routeKey = normalizeName(page.route.replace(/[:$][^/]*/g, "").replace(/\//g, ""));
+  keys.add(routeKey || "home");
+  if (!routeKey) {
+    keys.add("index");
+    keys.add("home");
+  }
+  keys.delete("");
+  const base = (p: string) => normalizeName((p.split("/").pop() ?? "").replace(/\.(tsx|jsx)$/, ""));
+  const dirBase = (p: string) => {
+    const parts = p.split("/");
+    const file = parts.pop() ?? "";
+    return /^index\.(tsx|jsx)$/.test(file) ? normalizeName(parts.pop() ?? "") : null;
+  };
+  return (
+    candidates.find((f) => keys.has(base(f.file_path))) ??
+    candidates.find((f) => {
+      const d = dirBase(f.file_path);
+      return d !== null && keys.has(d);
+    })
+  );
 }
 
 function ErrorWatcher({ onError }: { onError: (message: string | null) => void }) {
@@ -82,24 +150,45 @@ export function PreviewPanel({
   onAutoFix?: ((error: string) => void) | undefined;
   fixing?: boolean | undefined;
 }) {
-  const [activePage, setActivePage] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
-  const pageFiles = useMemo(
-    () =>
-      pages
-        .map((page) => {
-          const match = files.find((f) =>
-            f.file_path.toLowerCase().includes(`/pages/${page.name.replace(/\s+/g, "")}.`.toLowerCase()),
-          );
-          return match ? { name: page.name, path: match.file_path } : null;
-        })
-        .filter((v): v is { name: string; path: string } => v !== null),
-    [pages, files],
-  );
+  const pageFiles = useMemo(() => {
+    const candidates = files.filter(
+      (f) =>
+        /\.(tsx|jsx)$/.test(f.file_path) &&
+        !/(^|\/)(server|backend|api)\//.test(f.file_path) &&
+        /(^|\/)(pages|routes|views|screens)\//i.test(f.file_path),
+    );
+    const seen = new Set<string>();
+    const out: { name: string; path: string }[] = [];
+    for (const page of pages) {
+      const match = matchPageFile(page, candidates);
+      if (match && !seen.has(match.file_path)) {
+        seen.add(match.file_path);
+        out.push({ name: page.name, path: match.file_path });
+      }
+    }
+    return out;
+  }, [pages, files]);
+
+  // Default to first page; explicit null means the App tab.
+  const activePage =
+    selected === undefined || (selected !== null && !pageFiles.some((p) => p.path === selected))
+      ? (pageFiles[0]?.path ?? null)
+      : selected;
+  const setActivePage = setSelected;
 
   const sandpackFiles = useMemo(() => toSandpackFiles(files, activePage), [files, activePage]);
+  const deps = useMemo(() => extractDeps(files), [files]);
+  const contentKey = useMemo(() => {
+    let h = 0;
+    const s = Object.entries(sandpackFiles).map(([k, v]) => k + "\u0000" + v).join("|") + JSON.stringify(deps);
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return `${nonce}-${activePage ?? "app"}-${h}`;
+  }, [sandpackFiles, deps, nonce, activePage]);
+
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -141,10 +230,11 @@ export function PreviewPanel({
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border">
         <SandpackProvider
-          key={nonce}
+          key={contentKey}
           template="react-ts"
           theme="dark"
           files={sandpackFiles}
+          customSetup={{ dependencies: deps, entry: "/index.tsx" }}
           options={{ recompileDelay: 600, autorun: true }}
         >
           <ErrorWatcher onError={setError} />
