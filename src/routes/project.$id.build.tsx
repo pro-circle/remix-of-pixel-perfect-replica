@@ -4,6 +4,7 @@ import { ArrowRight, Play, RotateCcw } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { WideShell } from "@/components/forge/AppShell";
+import { CodeWorkspace } from "@/components/forge/CodeWorkspace";
 import { PreviewPanel } from "@/components/forge/PreviewPanel";
 import { Timeline, type TimelineNode } from "@/components/forge/Timeline";
 import { Button, Card, ErrorNote, Progress, Skeleton, Stepper } from "@/components/forge/ui";
@@ -74,6 +75,7 @@ function BuildPage() {
   const [files, setFiles] = useState<GeneratedFile[] | null>(null);
   const [running, setRunning] = useState(false);
   const [fixing, setFixing] = useState(false);
+  const [tab, setTab] = useState<"preview" | "code">("preview");
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const cancelled = useRef(false);
 
@@ -289,13 +291,44 @@ function BuildPage() {
           ) : null}
         </Card>
 
-        <div className="h-[78vh]">
-          <PreviewPanel
-            files={currentFiles}
-            pages={plan.pages}
-            onAutoFix={autoFix}
-            fixing={fixing}
-          />
+        <div className="flex h-[78vh] min-h-0 flex-col gap-3">
+          <div className="flex gap-1">
+            {(["preview", "code"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={
+                  tab === t
+                    ? "rounded-md bg-primary-soft px-3 py-1 text-xs font-medium text-primary"
+                    : "rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-surface-2"
+                }
+              >
+                {t === "preview" ? "Preview" : "Code"}
+              </button>
+            ))}
+          </div>
+          <div className="min-h-0 flex-1">
+            {tab === "preview" ? (
+              <PreviewPanel
+                files={currentFiles}
+                pages={plan.pages}
+                stackId={project.data?.project.stack}
+                projectId={id}
+                onAutoFix={autoFix}
+                fixing={fixing}
+              />
+            ) : (
+              <CodeWorkspace
+                projectId={id}
+                files={currentFiles}
+                onChange={(path, content) => {
+                  setFiles(currentFiles.map((f) => (f.file_path === path ? { ...f, content } : f)));
+                  update(path, { content });
+                }}
+              />
+            )}
+          </div>
         </div>
       </div>
     </WideShell>
