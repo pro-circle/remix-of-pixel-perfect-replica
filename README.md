@@ -7,7 +7,7 @@ complete project you can download as a ZIP — with a live frontend preview whil
 
 - Node.js 20+ (or Bun)
 - A Supabase project (for storing your projects, plans and generated files)
-- 1–5 Groq API keys (rotated round-robin across requests)
+- 1–8 Groq API keys (rotated round-robin across requests)
 
 ## 1. Create the database tables
 
@@ -26,6 +26,9 @@ GROQ_KEY_2=
 GROQ_KEY_3=
 GROQ_KEY_4=
 GROQ_KEY_5=
+GROQ_KEY_6=
+GROQ_KEY_7=
+GROQ_KEY_8=
 
 FORGE_USERNAME=user
 FORGE_PASSWORD=12345678

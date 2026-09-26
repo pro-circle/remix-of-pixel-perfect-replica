@@ -17,7 +17,7 @@
 - All server work runs in `createServerFn` handlers (`src/lib/*.functions.ts`); no standalone
   Express/Node process, since the deploy target is serverless.
 - LLM calls go to Groq via `src/lib/groq.server.ts` with round-robin key rotation over
-  `GROQ_KEY_1..5`; task→model routing lives in `getModel`, and prompt plus completion budgets stay below the account TPM cap.
+  `GROQ_KEY_1..8`; task→model routing lives in `getModel`, and prompt plus completion budgets stay below the account TPM cap.
 - Build progress is driven client-side: the browser walks the plan's file manifest in batches and
   calls `generateFile` per file, so no SSE stream is needed on serverless hosting.
 - Demo auth is a signed HttpOnly cookie (`src/lib/session.server.ts`) with credentials from env —
@@ -25,3 +25,5 @@
 - Stack ids are composite `frontend|backend|database` (parsed by `stackById`, legacy ids mapped), so any combination works without a stack table.
 - Starter files per stack live in `src/lib/scaffolds.ts` and are written verbatim by `generateFile`, to avoid spending model calls on boilerplate.
 - Thinking level is chosen per call by `pickThinking` in `groq.server.ts`, so reasoning is spent only on complex tasks.
+
+- The build page chat sidebar keeps one conversation per project in localStorage and applies AI file changes via `followUp`, so no extra database table is needed.

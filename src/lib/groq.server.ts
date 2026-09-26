@@ -10,13 +10,7 @@ const MIN_COMPLETION_TOKENS = 700;
 let keyIndex = 0;
 
 function loadKeys(): string[] {
-  return [
-    process.env["GROQ_KEY_1"],
-    process.env["GROQ_KEY_2"],
-    process.env["GROQ_KEY_3"],
-    process.env["GROQ_KEY_4"],
-    process.env["GROQ_KEY_5"],
-  ].filter((k): k is string => typeof k === "string" && k.trim().length > 0);
+  return Array.from({ length: 8 }, (_, i) => process.env[`GROQ_KEY_${i + 1}`]).filter((k): k is string => typeof k === "string" && k.trim().length > 0);
 }
 
 export type LlmTask =
@@ -28,6 +22,8 @@ export type LlmTask =
   | "config_file"
   | "preview_fix"
   | "chat"
+  | "followup"
+  | "vision"
   | "edit";
 
 export type Thinking = "none" | "low" | "medium" | "high";
@@ -52,6 +48,10 @@ export function pickThinking(task: LlmTask, hint = ""): Thinking {
     case "preview_fix":
     case "edit":
       return "medium";
+    case "followup":
+      return complex ? "medium" : "low";
+    case "vision":
+      return "none";
     case "config_file":
       return "none";
     default:
@@ -81,6 +81,8 @@ const TASK_OUTPUT_BUDGET: Record<LlmTask, number> = {
   config_file: 1_800,
   preview_fix: 4_000,
   chat: 2_400,
+  followup: 4_800,
+  vision: 3_000,
   edit: 4_800,
 };
 
@@ -132,7 +134,10 @@ export function getModel(task: LlmTask): string {
     case "preview_fix":
       return "qwen/qwen3-32b";
     case "edit":
+    case "followup":
       return "openai/gpt-oss-120b";
+    case "vision":
+      return "meta-llama/llama-4-scout-17b-16e-instruct";
     default:
       return "openai/gpt-oss-20b";
   }
@@ -156,6 +161,10 @@ type ChatOptions = {
   /** Override the automatic thinking level; `hint` feeds the automatic choice. */
   thinking?: Thinking;
   hint?: string;
+  /** Prior conversation turns (text only), oldest first. */
+  history?: { role: "user" | "assistant"; content: string }[];
+  /** Image data URLs attached to the final user turn (vision task only). */
+  images?: string[];
 };
 
 /** Calls Groq, rotating keys on rate-limit / auth failures. */
@@ -168,11 +177,13 @@ export async function chat({
   maxTokens,
   thinking,
   hint = "",
+  history = [],
+  images = [],
 }: ChatOptions): Promise<string> {
   const keys = loadKeys();
   if (keys.length === 0) {
     throw new GroqError(
-      "No Groq API keys configured. Add GROQ_KEY_1..GROQ_KEY_5 to your .env file.",
+      "No Groq API keys configured. Add GROQ_KEY_1..GROQ_KEY_8 to your .env file.",
       500,
     );
   }
@@ -181,7 +192,9 @@ export async function chat({
   const model = getModel(task);
   const level = thinking ?? pickThinking(task, hint || user.slice(0, 1500));
   // Reasoning is part of the completion budget, never an allowance added on top.
-  const outputTokens = completionBudget(task, system, user, maxTokens);
+  const historyText = history.map((m) => m.content).join("\n");
+  // Each image costs roughly 1.2k prompt tokens on Groq vision models.
+  const outputTokens = completionBudget(task, system + historyText + " ".repeat(images.length * 4200), user, maxTokens);
 
   for (let attempt = 0; attempt < keys.length; attempt++) {
     const key = keys[keyIndex % keys.length]!;
@@ -203,7 +216,16 @@ export async function chat({
           ...(json ? { response_format: { type: "json_object" } } : {}),
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            ...history,
+            {
+              role: "user",
+              content: images.length
+                ? [
+                    { type: "text", text: user },
+                    ...images.map((url) => ({ type: "image_url", image_url: { url } })),
+                  ]
+                : user,
+            },
           ],
         }),
       });
