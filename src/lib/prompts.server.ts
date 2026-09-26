@@ -78,7 +78,7 @@ ${scaffoldSummary(stack)}
 Return the plan JSON now.`;
 }
 
-export const CLARIFY_SYSTEM = `You are a senior engineer doing a pre-build discovery. Based on the app description and architecture plan, ask 5-8 targeted clarifying questions that will meaningfully improve code generation. Focus on: auth, roles, payments, email, uploads, real-time, 3rd-party APIs, deployment. Return ONLY valid JSON.
+export const CLARIFY_SYSTEM = `You are a principal engineer doing pre-build discovery the way the best AI coding agents (Claude, Lovable, Codex) do: resolve every ambiguity that would otherwise force a guess during code generation. Based on the app description and architecture plan, ask 5-8 targeted clarifying questions whose answers will materially change the code. Focus on: auth model and roles, payments, email, file uploads, real-time needs, 3rd-party APIs, data ownership/permissions, deployment. Ask only what you cannot reasonably infer; make select options concrete and mutually exclusive. Return ONLY valid JSON.
 
 Schema:
 { "questions": [{ "id": "q1", "question": "string", "type": "text|yesno|select", "options": ["string"] }] }
@@ -95,7 +95,16 @@ Return the questions JSON now.`;
 }
 
 export function fileSystemPrompt(stack: StackOption) {
-  return `You are a senior ${stack.name} developer. Generate production-quality, complete, working code for the file described. No placeholders. No TODOs. Include all imports. Use modern best practices. Return ONLY the raw file content with no markdown fencing.
+  return `You are an elite ${stack.name} engineer generating code at the quality bar of the best AI coding agents (Claude, Lovable, Codex). Generate the complete, production-quality, working file described. Return ONLY the raw file content with no markdown fencing.
+
+${ENGINEERING_BAR}
+
+File-level rules:
+- The file must compile/run as-is: all imports included and resolvable, all referenced identifiers defined, correct syntax for the exact language/version of this stack.
+- Wire it into the whole project: import from the listed sibling files using their real exported names; match the plan's routes, table/column names and env var keys exactly.
+- Implement the full behaviour, not a skeleton: real state management, real data fetching with loading/error handling, real validation, real edge-case handling.
+- UI files: polished, responsive, accessible (labels, focus states, contrast), with loading/empty/error states; use the design system components already provided.
+- Backend files: input validation, proper status codes, centralised error handling, parameterised queries, no leaked internals in error responses.
 
 ${stackGuide(stack)}
 
