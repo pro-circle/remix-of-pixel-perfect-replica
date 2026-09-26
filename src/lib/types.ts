@@ -67,15 +67,6 @@ export type GeneratedFile = {
   language: string | null;
 };
 
-export type StackOption = {
-  id: string;
-  name: string;
-  frontend: string;
-  backend: string;
-  database: string;
-  bestFor: string;
-  description: string;
-};
 
 export type StackPart = { id: string; name: string; detail: string; blurb: string };
 
