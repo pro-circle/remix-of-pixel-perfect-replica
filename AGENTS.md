@@ -22,3 +22,6 @@
   calls `generateFile` per file, so no SSE stream is needed on serverless hosting.
 - Demo auth is a signed HttpOnly cookie (`src/lib/session.server.ts`) with credentials from env —
   no user accounts.
+- Stack ids are composite `frontend|backend|database` (parsed by `stackById`, legacy ids mapped), so any combination works without a stack table.
+- Starter files per stack live in `src/lib/scaffolds.ts` and are written verbatim by `generateFile`, to avoid spending model calls on boilerplate.
+- Thinking level is chosen per call by `pickThinking` in `groq.server.ts`, so reasoning is spent only on complex tasks.

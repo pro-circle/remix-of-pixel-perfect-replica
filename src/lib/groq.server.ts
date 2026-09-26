@@ -13,6 +13,7 @@ function loadKeys(): string[] {
     process.env["GROQ_KEY_2"],
     process.env["GROQ_KEY_3"],
     process.env["GROQ_KEY_4"],
+    process.env["GROQ_KEY_5"],
   ].filter((k): k is string => typeof k === "string" && k.trim().length > 0);
 }
 
@@ -24,7 +25,50 @@ export type LlmTask =
   | "schema_file"
   | "config_file"
   | "preview_fix"
-  | "chat";
+  | "chat"
+  | "edit";
+
+export type Thinking = "none" | "low" | "medium" | "high";
+
+/**
+ * Decides how hard the model should "think". Reasoning is only spent where it
+ * pays off: planning, complex logic files and debugging. Simple files skip it.
+ */
+export function pickThinking(task: LlmTask, hint = ""): Thinking {
+  const h = hint.toLowerCase();
+  const complex = /auth|payment|stripe|webhook|realtime|socket|permission|role|schema|migration|middleware|dashboard|checkout|upload|search|state|store|context/.test(h);
+  switch (task) {
+    case "plan":
+      return hint.length > 900 ? "high" : "medium";
+    case "clarify":
+      return "low";
+    case "backend_file":
+    case "schema_file":
+      return complex ? "high" : "medium";
+    case "frontend_file":
+      return complex ? "medium" : "low";
+    case "preview_fix":
+    case "edit":
+      return "medium";
+    case "config_file":
+      return "none";
+    default:
+      return "low";
+  }
+}
+
+function reasoningParams(model: string, thinking: Thinking): Record<string, unknown> {
+  if (model.startsWith("openai/gpt-oss")) {
+    // gpt-oss always reasons; "low" is the cheapest setting. Keep the trace out of the output.
+    return { reasoning_effort: thinking === "none" ? "low" : thinking, include_reasoning: false };
+  }
+  if (model.startsWith("qwen/")) {
+    return thinking === "none"
+      ? { reasoning_effort: "none" }
+      : { reasoning_effort: "default", reasoning_format: "hidden" };
+  }
+  return {};
+}
 
 export function getModel(task: LlmTask): string {
   switch (task) {
@@ -39,6 +83,8 @@ export function getModel(task: LlmTask): string {
       return "openai/gpt-oss-20b";
     case "preview_fix":
       return "qwen/qwen3-32b";
+    case "edit":
+      return "openai/gpt-oss-120b";
     default:
       return "openai/gpt-oss-20b";
   }
@@ -59,6 +105,9 @@ type ChatOptions = {
   json?: boolean;
   temperature?: number;
   maxTokens?: number;
+  /** Override the automatic thinking level; `hint` feeds the automatic choice. */
+  thinking?: Thinking;
+  hint?: string;
 };
 
 /** Calls Groq, rotating keys on rate-limit / auth failures. */
@@ -69,16 +118,23 @@ export async function chat({
   json = false,
   temperature = 0.3,
   maxTokens = 8000,
+  thinking,
+  hint = "",
 }: ChatOptions): Promise<string> {
   const keys = loadKeys();
   if (keys.length === 0) {
     throw new GroqError(
-      "No Groq API keys configured. Add GROQ_KEY_1..GROQ_KEY_4 to your .env file.",
+      "No Groq API keys configured. Add GROQ_KEY_1..GROQ_KEY_5 to your .env file.",
       500,
     );
   }
 
   let lastError: GroqError | null = null;
+  const model = getModel(task);
+  const level = thinking ?? pickThinking(task, hint || user.slice(0, 1500));
+  // Thinking consumes completion tokens, so give it headroom.
+  const budget = level === "high" ? 4000 : level === "medium" ? 2000 : 0;
+  maxTokens += budget;
 
   for (let attempt = 0; attempt < keys.length; attempt++) {
     const key = keys[keyIndex % keys.length]!;
@@ -93,7 +149,8 @@ export async function chat({
           Authorization: `Bearer ${key}`,
         },
         body: JSON.stringify({
-          model: getModel(task),
+          model,
+          ...reasoningParams(model, level),
           temperature,
           max_completion_tokens: maxTokens,
           ...(json ? { response_format: { type: "json_object" } } : {}),

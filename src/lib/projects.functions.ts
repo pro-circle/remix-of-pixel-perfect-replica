@@ -135,6 +135,7 @@ export const generatePlan = createServerFn({ method: "POST" })
       user: planUserPrompt((project as Project).description, stack),
       json: true,
       temperature: 0.4,
+      hint: (project as Project).description,
     });
     const plan = parseJson<Plan>(raw);
     plan.pages ??= [];
@@ -143,6 +144,8 @@ export const generatePlan = createServerFn({ method: "POST" })
     plan.envVars ??= [];
     plan.features ??= [];
     plan.filesToGenerate ??= [];
+    const { mergeScaffold } = await import("./scaffolds");
+    plan.filesToGenerate = mergeScaffold(plan.filesToGenerate, stack);
 
     await db.from("project_plans").delete().eq("project_id", data.id);
     const { error: insertError } = await db
@@ -262,7 +265,11 @@ export const generateFile = createServerFn({ method: "POST" })
     const plan = planRow?.plan_json as Plan | undefined;
     if (!stack || !plan) throw new Error("Missing stack or plan for this project.");
 
-    const content = stripFences(
+    // Preloaded starter files are written verbatim, no model call needed.
+    const { scaffoldFor } = await import("./scaffolds");
+    const preset = scaffoldFor(stack).find((s) => s.path === data.path);
+
+    const content = preset ? preset.content : stripFences(
       await chat({
         task: data.task,
         system: fileSystemPrompt(stack),
@@ -275,6 +282,7 @@ export const generateFile = createServerFn({ method: "POST" })
           adjacentFiles: plan.filesToGenerate.map((f) => f.path),
         }),
         temperature: 0.2,
+        hint: `${data.path} ${data.description}`,
       }),
     );
 
@@ -333,4 +341,60 @@ export const fixFile = createServerFn({ method: "POST" })
       );
     if (error) throw new Error(error.message);
     return { fixedContent };
+  });
+
+/** Saves a manual edit to a generated file. */
+export const saveFile = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string; filePath: string; content: string }) => {
+    if (!data.filePath.trim()) throw new Error("File path is required.");
+    if (data.content.length > 500_000) throw new Error("File is too large.");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const db = await guard();
+    const { error } = await db.from("generated_files").upsert(
+      {
+        project_id: data.id,
+        file_path: data.filePath,
+        content: data.content,
+        language: languageFor(data.filePath),
+      },
+      { onConflict: "project_id,file_path" },
+    );
+    if (error) throw new Error(error.message);
+    return { success: true as const };
+  });
+
+/** Applies a natural-language edit to one file with the AI and saves it. */
+export const editFileWithAi = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: { id: string; filePath: string; fileContent: string; instruction: string }) => {
+      const instruction = data.instruction.trim();
+      if (instruction.length < 3) throw new Error("Describe the change you want.");
+      return { ...data, instruction: instruction.slice(0, 2000) };
+    },
+  )
+  .handler(async ({ data }) => {
+    const db = await guard();
+    const { chat, stripFences } = await import("./groq.server");
+    const { EDIT_SYSTEM, editUserPrompt } = await import("./prompts.server");
+    const { data: project } = await db.from("projects").select("stack").eq("id", data.id).maybeSingle();
+    const stack = stackById((project as { stack: string | null } | null)?.stack);
+    if (!stack) throw new Error("Missing stack for this project.");
+
+    const content = stripFences(
+      await chat({
+        task: "edit",
+        system: EDIT_SYSTEM,
+        user: editUserPrompt(data.instruction, data.filePath, data.fileContent, stack),
+        temperature: 0.2,
+        hint: data.instruction,
+      }),
+    );
+    const { error } = await db.from("generated_files").upsert(
+      { project_id: data.id, file_path: data.filePath, content, language: languageFor(data.filePath) },
+      { onConflict: "project_id,file_path" },
+    );
+    if (error) throw new Error(error.message);
+    return { content };
   });

@@ -267,7 +267,7 @@ function ExportPage() {
 
       <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title={plan.appName}>
         <div className="h-full p-4">
-          <PreviewPanel files={files} pages={plan.pages} />
+          <PreviewPanel files={files} pages={plan.pages} stackId={project.data?.project.stack} projectId={id} />
         </div>
       </Modal>
     </AppShell>

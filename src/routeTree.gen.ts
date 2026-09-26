@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as NewRouteImport } from './routes/new'
+import { Route as PreviewIdRouteImport } from './routes/preview.$id'
 import { Route as ProjectIdBuildRouteImport } from './routes/project.$id.build'
 import { Route as ProjectIdClarifyRouteImport } from './routes/project.$id.clarify'
 import { Route as ProjectIdExportRouteImport } from './routes/project.$id.export'
@@ -31,6 +32,11 @@ const LoginRoute = LoginRouteImport.update({
 const NewRoute = NewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PreviewIdRoute = PreviewIdRouteImport.update({
+  id: '/preview/$id',
+  path: '/preview/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectIdBuildRoute = ProjectIdBuildRouteImport.update({
@@ -63,6 +69,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/preview/$id': typeof PreviewIdRoute
   '/project/$id/build': typeof ProjectIdBuildRoute
   '/project/$id/clarify': typeof ProjectIdClarifyRoute
   '/project/$id/export': typeof ProjectIdExportRoute
@@ -73,6 +80,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/preview/$id': typeof PreviewIdRoute
   '/project/$id/build': typeof ProjectIdBuildRoute
   '/project/$id/clarify': typeof ProjectIdClarifyRoute
   '/project/$id/export': typeof ProjectIdExportRoute
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/preview/$id': typeof PreviewIdRoute
   '/project/$id/build': typeof ProjectIdBuildRoute
   '/project/$id/clarify': typeof ProjectIdClarifyRoute
   '/project/$id/export': typeof ProjectIdExportRoute
@@ -96,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/new'
+    | '/preview/$id'
     | '/project/$id/build'
     | '/project/$id/clarify'
     | '/project/$id/export'
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/new'
+    | '/preview/$id'
     | '/project/$id/build'
     | '/project/$id/clarify'
     | '/project/$id/export'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/new'
+    | '/preview/$id'
     | '/project/$id/build'
     | '/project/$id/clarify'
     | '/project/$id/export'
@@ -127,6 +139,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   NewRoute: typeof NewRoute
+  PreviewIdRoute: typeof PreviewIdRoute
   ProjectIdBuildRoute: typeof ProjectIdBuildRoute
   ProjectIdClarifyRoute: typeof ProjectIdClarifyRoute
   ProjectIdExportRoute: typeof ProjectIdExportRoute
@@ -155,6 +168,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/new'
       preLoaderRoute: typeof NewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/preview/$id': {
+      id: '/preview/$id'
+      path: '/preview/$id'
+      fullPath: '/preview/$id'
+      preLoaderRoute: typeof PreviewIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/project/$id/build': {
@@ -199,6 +219,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   NewRoute: NewRoute,
+  PreviewIdRoute: PreviewIdRoute,
   ProjectIdBuildRoute: ProjectIdBuildRoute,
   ProjectIdClarifyRoute: ProjectIdClarifyRoute,
   ProjectIdExportRoute: ProjectIdExportRoute,
