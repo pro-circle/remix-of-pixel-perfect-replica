@@ -119,6 +119,26 @@ function matchPageFile(page: PlanPage, candidates: GeneratedFile[]): GeneratedFi
   );
 }
 
+function ErrorWatcher({ onError }: { onError: (message: string | null) => void }) {
+  const { sandpack, listen } = useSandpack();
+
+  useEffect(() => {
+    const unsubscribe = listen((msg) => {
+      if (msg.type === "action" && msg.action === "show-error") {
+        onError(msg.message || msg.title || "Unknown preview error");
+      }
+      if (msg.type === "start" || msg.type === "success") onError(null);
+    });
+    return unsubscribe;
+  }, [listen, onError]);
+
+  useEffect(() => {
+    if (sandpack.error?.message) onError(sandpack.error.message);
+  }, [sandpack.error, onError]);
+
+  return null;
+}
+
 export function PreviewPanel({
   files,
   pages,
