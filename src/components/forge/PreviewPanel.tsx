@@ -360,7 +360,7 @@ export function PreviewPanel({
       <div
         className={cn(
           "forge-preview min-h-0 w-full flex-1 overflow-hidden bg-background",
-          fullscreen ? "h-full" : "min-h-[32rem] rounded-xl border border-border",
+          fullscreen ? "min-h-0" : "min-h-[32rem] rounded-xl border border-border",
         )}
       >
         <SandpackProvider
