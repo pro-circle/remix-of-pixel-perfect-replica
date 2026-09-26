@@ -398,3 +398,113 @@ export const editFileWithAi = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { content };
   });
+
+type ChatTurn = { role: "user" | "assistant"; content: string };
+type ChatAttachment = { kind: "image" | "text"; name: string; data: string };
+
+/** Follow-up chat: answers questions and applies file changes to the generated project. */
+export const followUp = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: { id: string; message: string; history: ChatTurn[]; attachments: ChatAttachment[] }) => {
+      const message = data.message.trim();
+      if (!message && data.attachments.length === 0) throw new Error("Type a message first.");
+      const attachments = data.attachments.slice(0, 4).map((a) => {
+        if (a.kind === "image" && !/^data:image\/(png|jpe?g|webp|gif);base64,/.test(a.data))
+          throw new Error(`${a.name} is not a supported image.`);
+        if (a.kind === "image" && a.data.length > 3_800_000) throw new Error(`${a.name} is too large (max ~2.5 MB).`);
+        return a.kind === "text" ? { ...a, data: a.data.slice(0, 6000) } : a;
+      });
+      const history = data.history
+        .filter((t) => t.role === "user" || t.role === "assistant")
+        .slice(-6)
+        .map((t) => ({ role: t.role, content: t.content.slice(0, 1200) }));
+      return { id: data.id, message: message.slice(0, 3000), history, attachments };
+    },
+  )
+  .handler(async ({ data }) => {
+    const db = await guard();
+    const { chat, parseJson } = await import("./groq.server");
+    const [{ data: project }, { data: rows, error }] = await Promise.all([
+      db.from("projects").select("stack, name").eq("id", data.id).maybeSingle(),
+      db.from("generated_files").select("file_path, content").eq("project_id", data.id),
+    ]);
+    if (error) throw new Error(error.message);
+    const stack = stackById((project as { stack: string | null } | null)?.stack);
+    const files = (rows ?? []) as { file_path: string; content: string }[];
+
+    // 1. Images → text description with the vision model (the code model is text-only).
+    const images = data.attachments.filter((a) => a.kind === "image");
+    let imageNotes = "";
+    if (images.length) {
+      imageNotes = await chat({
+        task: "vision",
+        system:
+          "You describe UI screenshots, mockups and images for a software engineer. Be precise: layout, components, colours, text, spacing, visible errors. Plain text, no preamble.",
+        user: `User request: ${data.message || "(none)"}\nDescribe the attached image(s) as they relate to the request.`,
+        images: images.map((i) => i.data),
+        temperature: 0.2,
+      });
+    }
+
+    // 2. Pick relevant files to include in full, within the token budget.
+    const text = (data.message + " " + data.history.map((h) => h.content).join(" ")).toLowerCase();
+    const scored = files
+      .map((f) => {
+        const base = f.file_path.split("/").pop()!.toLowerCase();
+        const stem = base.replace(/\.[^.]+$/, "");
+        let score = 0;
+        if (text.includes(f.file_path.toLowerCase())) score += 10;
+        if (text.includes(base)) score += 6;
+        if (stem.length > 3 && text.includes(stem)) score += 3;
+        return { f, score };
+      })
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score);
+    let budget = 9000;
+    const included: string[] = [];
+    for (const { f } of scored) {
+      if (f.content.length > budget) continue;
+      budget -= f.content.length;
+      included.push(`--- ${f.file_path} ---\n${f.content}`);
+      if (included.length >= 3) break;
+    }
+    const textFiles = data.attachments
+      .filter((a) => a.kind === "text")
+      .map((a) => `--- attached: ${a.name} ---\n${a.data}`)
+      .join("\n\n");
+
+    const system = `You are Forge's senior engineer (Claude/Lovable/Codex level), chatting with the user about their generated project and making precise follow-up changes.
+Stack: ${stack?.name ?? "unknown"}.
+Reply with a JSON object: {"reply": string (markdown, concise, explains what you did or answers the question), "changes": [{"path": string, "content": string (FULL new file content)}]}.
+Rules: only change files when the user asks for a change; every changed file must be complete and compile; keep unrelated code intact; imports must match real files in the project; new files use paths consistent with the existing layout; if a file you need is not shown, say which file and ask the user to mention it. Never use placeholders.`;
+    const user = `Project files:\n${files.map((f) => f.file_path).join("\n") || "(none yet)"}\n\n${
+      included.length ? `Relevant file contents:\n${included.join("\n\n")}\n\n` : ""
+    }${textFiles ? `${textFiles}\n\n` : ""}${imageNotes ? `Attached image description:\n${imageNotes}\n\n` : ""}User: ${data.message || "(see attachments)"}`;
+
+    const raw = await chat({
+      task: "followup",
+      system,
+      user,
+      history: data.history,
+      json: true,
+      temperature: 0.2,
+      hint: data.message,
+    });
+    const parsed = parseJson<{ reply?: string; changes?: { path?: string; content?: string }[] }>(raw);
+    const changes = (parsed.changes ?? [])
+      .filter((c): c is { path: string; content: string } => !!c.path && typeof c.content === "string")
+      .map((c) => ({ path: c.path.replace(/^\/+/, ""), content: c.content }));
+    if (changes.length) {
+      const { error: upErr } = await db.from("generated_files").upsert(
+        changes.map((c) => ({
+          project_id: data.id,
+          file_path: c.path,
+          content: c.content,
+          language: languageFor(c.path),
+        })),
+        { onConflict: "project_id,file_path" },
+      );
+      if (upErr) throw new Error(upErr.message);
+    }
+    return { reply: parsed.reply?.trim() || "Done.", changes };
+  });
