@@ -77,61 +77,64 @@ export type StackOption = {
   description: string;
 };
 
-export const STACKS: StackOption[] = [
-  {
-    id: "react-express-supabase",
-    name: "React + Express + Supabase",
-    frontend: "React 18 + Vite",
-    backend: "Express.js",
-    database: "Supabase (PostgreSQL + Auth + Storage)",
-    bestFor: "Rapid SaaS apps, real-time features",
-    description:
-      "Batteries-included: hosted Postgres, auth and storage with a thin Express layer for server logic.",
-  },
-  {
-    id: "react-express-postgres",
-    name: "React + Express + PostgreSQL",
-    frontend: "React 18 + Vite",
-    backend: "Express.js",
-    database: "PostgreSQL (raw, pg driver)",
-    bestFor: "Custom data models, full SQL control",
-    description:
-      "Own your schema and queries end to end with parameterised raw SQL and a connection pool.",
-  },
-  {
-    id: "react-fastapi-supabase",
-    name: "React + FastAPI + Supabase",
-    frontend: "React 18 + Vite",
-    backend: "FastAPI (Python)",
-    database: "Supabase (PostgreSQL)",
-    bestFor: "ML-adjacent apps, Python backends",
-    description:
-      "Python backend with pydantic validation, ideal when your logic lives in the Python ecosystem.",
-  },
-  {
-    id: "react-fastapi-mongodb",
-    name: "React + FastAPI + MongoDB",
-    frontend: "React 18 + Vite",
-    backend: "FastAPI (Python)",
-    database: "MongoDB (Motor async driver)",
-    bestFor: "Flexible schemas, document-heavy apps",
-    description:
-      "Document storage with async Motor and Beanie models for fast-moving, nested data.",
-  },
-  {
-    id: "expo-supabase",
-    name: "React Native + Expo + Supabase",
-    frontend: "React Native + Expo",
-    backend: "Supabase Edge Functions",
-    database: "Supabase",
-    bestFor: "Cross-platform mobile apps",
-    description:
-      "One codebase for iOS and Android with expo-router, NativeWind and Supabase auth.",
-  },
+export type StackPart = { id: string; name: string; detail: string; blurb: string };
+
+export const FRONTENDS: StackPart[] = [
+  { id: "react", name: "React.js", detail: "React 18 + Vite + Tailwind + shadcn/ui", blurb: "Single-page app with fast dev server and component library." },
+  { id: "nextjs", name: "Next.js", detail: "Next.js 14 App Router + Tailwind + shadcn/ui", blurb: "File-based routing, server components and SEO out of the box." },
+  { id: "html", name: "HTML, CSS, JS", detail: "Plain HTML5, CSS3 and vanilla JavaScript", blurb: "No build step. Lightweight pages that run anywhere." },
 ];
 
-export const stackById = (id: string | null | undefined) =>
-  STACKS.find((s) => s.id === id) ?? null;
+export const BACKENDS: StackPart[] = [
+  { id: "express", name: "Express.js", detail: "Express.js (Node 20)", blurb: "Minimal, flexible Node server with a huge ecosystem." },
+  { id: "fastapi", name: "FastAPI", detail: "FastAPI (Python 3.11)", blurb: "Typed Python APIs with automatic docs and pydantic validation." },
+];
+
+export const DATABASES: StackPart[] = [
+  { id: "postgres", name: "PostgreSQL", detail: "PostgreSQL (raw SQL)", blurb: "Full SQL control with your own schema and queries." },
+  { id: "supabase", name: "Supabase", detail: "Supabase (PostgreSQL + Auth + Storage)", blurb: "Hosted Postgres with auth, storage and realtime." },
+  { id: "mongodb", name: "MongoDB", detail: "MongoDB (document store)", blurb: "Flexible JSON documents for fast-changing data." },
+];
+
+export type StackOption = {
+  id: string;
+  name: string;
+  frontend: string;
+  backend: string;
+  database: string;
+  frontendId: string;
+  backendId: string;
+  databaseId: string;
+};
+
+const LEGACY: Record<string, string> = {
+  "react-express-supabase": "react|express|supabase",
+  "react-express-postgres": "react|express|postgres",
+  "react-fastapi-supabase": "react|fastapi|supabase",
+  "react-fastapi-mongodb": "react|fastapi|mongodb",
+  "expo-supabase": "react|express|supabase",
+};
+
+export const makeStackId = (fe: string, be: string, db: string) => `${fe}|${be}|${db}`;
+
+export function stackById(id: string | null | undefined): StackOption | null {
+  if (!id) return null;
+  const [fe, be, db] = (LEGACY[id] ?? id).split("|");
+  const f = FRONTENDS.find((x) => x.id === fe);
+  const b = BACKENDS.find((x) => x.id === be);
+  const d = DATABASES.find((x) => x.id === db);
+  if (!f || !b || !d) return null;
+  return {
+    id: makeStackId(f.id, b.id, d.id),
+    name: `${f.name} + ${b.name} + ${d.name}`,
+    frontend: f.detail,
+    backend: b.detail,
+    database: d.detail,
+    frontendId: f.id,
+    backendId: b.id,
+    databaseId: d.id,
+  };
+}
 
 export const STATUS_LABEL: Record<ProjectStatus, string> = {
   DESCRIBING: "Describing",
