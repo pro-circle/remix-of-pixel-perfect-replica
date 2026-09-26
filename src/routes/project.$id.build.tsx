@@ -4,6 +4,7 @@ import { ArrowRight, Play, RotateCcw } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { WideShell } from "@/components/forge/AppShell";
+import { ChatSidebar } from "@/components/forge/ChatSidebar";
 import { CodeWorkspace } from "@/components/forge/CodeWorkspace";
 import { PreviewPanel } from "@/components/forge/PreviewPanel";
 import { Timeline, type TimelineNode } from "@/components/forge/Timeline";
@@ -61,6 +62,12 @@ async function runPool<T>(items: T[], limit: number, worker: (item: T) => Promis
     }
   });
   await Promise.all(runners);
+}
+
+function upsertFiles(base: GeneratedFile[], incoming: GeneratedFile[]): GeneratedFile[] {
+  const map = new Map(base.map((f) => [f.file_path, f]));
+  for (const f of incoming) map.set(f.file_path, f);
+  return [...map.values()];
 }
 
 function BuildPage() {
@@ -131,12 +138,10 @@ function BuildPage() {
           const result = await generateFile({
             data: { id, path: file.path, description: file.description, task: file.task },
           });
-          generated.push({
-            file_path: result.path,
-            content: result.content,
-            language: result.language,
-          });
-          setFiles([...generated]);
+          const entry = { file_path: result.path, content: result.content, language: result.language };
+          generated.push(entry);
+          // Functional merge so chat edits made during the build are never overwritten.
+          setFiles((prev) => upsertFiles(prev ?? existingFiles, [entry]));
           update(file.path, { status: "DONE", content: result.content });
           return;
         } catch (e) {
@@ -226,7 +231,7 @@ function BuildPage() {
   return (
     <WideShell>
       <Stepper current={5} />
-      <div className="mt-6 grid items-stretch gap-6 lg:grid-cols-[minmax(20rem,2fr)_minmax(0,3fr)]">
+      <div className="mt-6 grid items-stretch gap-6 lg:grid-cols-[minmax(18rem,2fr)_minmax(0,3fr)] 2xl:grid-cols-[minmax(18rem,1.6fr)_minmax(0,3fr)_minmax(20rem,1.5fr)]">
         <Card className="flex max-h-[78vh] flex-col">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -329,6 +334,22 @@ function BuildPage() {
               />
             )}
           </div>
+        </div>
+
+        <div className="h-[36rem] min-w-0 lg:col-span-2 2xl:col-span-1 2xl:h-[78vh]">
+          <ChatSidebar
+            projectId={id}
+            onFilesChanged={(changes) => {
+              const incoming = changes.map((c) => ({
+                file_path: c.path,
+                content: c.content,
+                language: currentFiles.find((f) => f.file_path === c.path)?.language ?? "plaintext",
+              }));
+              setFiles((prev) => upsertFiles(prev ?? existingFiles, incoming));
+              for (const c of changes) update(c.path, { content: c.content, status: "DONE" });
+              toast.success(`Updated ${changes.length} file(s)`);
+            }}
+          />
         </div>
       </div>
     </WideShell>
