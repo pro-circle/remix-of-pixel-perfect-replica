@@ -15,6 +15,7 @@ export const getRouter = () => {
   const handleError = (error: unknown) => {
     if (!isUnauthenticated(error) || typeof window === "undefined") return;
     localStorage.removeItem("forge_auth");
+    localStorage.removeItem("forge_session_token");
     if (window.location.pathname !== "/login") void router.navigate({ to: "/login" });
   };
 
